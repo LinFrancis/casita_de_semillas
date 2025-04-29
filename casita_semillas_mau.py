@@ -1,69 +1,41 @@
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import streamlit as st
 import pandas as pd
-import io
 
-# =====================
-# CONFIGURACIÓN DE LA PÁGINA
-# =====================
-st.set_page_config(
-    page_title="Casita de Semillas MAU",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# =========================
+# CONNECT TO GOOGLE SHEET
+# =========================
+def connect_to_gsheet(spreadsheet_name, sheet_name):
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive"
+    ]
 
-st.title("🌱 Casita de Semillas MAU")
-st.markdown("""
-Bienvenida/o al visualizador de movimientos de semillas del Movimiento de Agroecología Urbana (MAU).
-Sube tu archivo de registro para comenzar a explorar los datos.
-""")
+    creds_dict = st.secrets["gsheets"]
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(dict(creds_dict), scope)
+    client = gspread.authorize(credentials)
+    spreadsheet = client.open(spreadsheet_name)
+    return spreadsheet.worksheet(sheet_name)
 
-# =====================
-# CARGAR ARCHIVO
-# =====================
-uploaded_file = st.file_uploader("Sube el archivo de registro (.xlsx)", type=["xlsx"])
+# Nombres
+SPREADSHEET_NAME = 'Registro de Movimientos de Semillas (Respuestas)'
 
-if uploaded_file is not None:
-    try:
-        df = pd.read_excel(uploaded_file)
-        st.success("¡Archivo cargado exitosamente!")
+# Cargar hoja de Movimientos de Semillas
+sheet_movimientos = connect_to_gsheet(SPREADSHEET_NAME, 'Respuestas de formulario 1')
+df_movimientos = pd.DataFrame(sheet_movimientos.get_all_records())
 
-        # =====================
-        # FILTROS
-        # =====================
-        st.sidebar.header("🔎 Filtros")
+# Cargar hoja de BBDD Fitodiversidad
+sheet_fitodiversidad = connect_to_gsheet(SPREADSHEET_NAME, 'BBDD Fitodiversidad')
+df_fitodiversidad = pd.DataFrame(sheet_fitodiversidad.get_all_records())
 
-        columnas_filtrar = st.sidebar.multiselect("Selecciona columnas para filtrar:", df.columns)
+# Mostrar ambos DataFrames en Streamlit
+st.title("🌱 Casita de Semillas MAU - Visualizador de Datos")
 
-        df_filtrado = df.copy()
+st.subheader("📋 Registro de Movimientos de Semillas")
+st.dataframe(df_movimientos)
 
-        for columna in columnas_filtrar:
-            opciones = df_filtrado[columna].dropna().unique()
-            seleccion = st.sidebar.multiselect(f"Filtrar por {columna}:", opciones)
-            if seleccion:
-                df_filtrado = df_filtrado[df_filtrado[columna].isin(seleccion)]
-
-        # =====================
-        # VISTA PREVIA
-        # =====================
-        st.subheader("📋 Vista previa de los datos")
-        st.dataframe(df_filtrado)
-
-        # =====================
-        # DESCARGAR ARCHIVO FILTRADO
-        # =====================
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_filtrado.to_excel(writer, index=False, sheet_name='Movimientos')
-
-        st.download_button(
-            label="💾 Descargar datos filtrados en Excel",
-            data=output.getvalue(),
-            file_name='Movimientos_filtrados.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-
-    except Exception as e:
-        st.error(f"Error al procesar el archivo: {e}")
-
-else:
-    st.info("Por favor, sube un archivo para comenzar.")
+st.subheader("🌿 Base de Datos de Fitodiversidad")
+st.dataframe(df_fitodiversidad)
